@@ -18,9 +18,15 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 SYSTEM = platform.system()  # Windows / Darwin / Linux
 
 def build(entry: str, name: str, windowed: bool):
+    # 不用 --collect-all: 它会把 mss/pynput 的全部子模块和数据一股脑收进来,
+    # 在部分平台会让 PyInstaller 分析阶段失败。改成显式声明运行时才动态加载的后端:
+    # 抓屏只需 mss 本体; pynput 按平台加载 _win32/_darwin/_xorg 后端, 静态分析跟不到, 必须点名。
     args = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile",
             "--name", name, "--paths", ROOT,
-            "--collect-all", "mss", "--collect-all", "pynput",
+            "--hidden-import", "mss",
+            "--hidden-import", "pynput.mouse._win32", "--hidden-import", "pynput.keyboard._win32",
+            "--hidden-import", "pynput.mouse._darwin", "--hidden-import", "pynput.keyboard._darwin",
+            "--hidden-import", "pynput.mouse._xorg", "--hidden-import", "pynput.keyboard._xorg",
             "--hidden-import", "PIL.ImageTk"]
     icon_name = {"Windows": "icon.ico", "Darwin": "icon.icns"}.get(SYSTEM, "icon.png")
     icon = os.path.join(ROOT, "assets", icon_name)
