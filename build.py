@@ -35,8 +35,21 @@ def build(entry: str, name: str, windowed: bool):
     if windowed:
         args.append("--windowed")  # macOS 下会额外生成 .app
     args.append(os.path.join(ROOT, entry))
-    print("+", " ".join(args))
-    subprocess.check_call(args, cwd=ROOT)
+    print("+", " ".join(args), flush=True)
+    # 捕获 PyInstaller 输出: 失败时把尾部写进 GitHub Actions 的 Job Summary
+    # ($GITHUB_STEP_SUMMARY 指向的文件会渲染在运行页上, 公开仓库未登录也能看),
+    # 这样在看不到完整日志时也能定位失败原因; 本地运行时该变量不存在, 自动跳过。
+    proc = subprocess.run(args, cwd=ROOT, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True, errors="replace")
+    sys.stdout.write(proc.stdout)
+    if proc.returncode != 0:
+        tail = "\n".join(proc.stdout.splitlines()[-60:])
+        summary = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary:
+            with open(summary, "a", encoding="utf-8") as f:
+                f.write(f"\n### PyInstaller failed: {name} (exit {proc.returncode})\n\n```\n{tail}\n```\n")
+        print(f"::error::PyInstaller failed for {name} with exit code {proc.returncode}; see job summary for log tail")
+        raise SystemExit(proc.returncode)
 
 def main():
     # 图标是生成的二进制产物, 打包前现生成 (仓库里只存 make_icons.py)
