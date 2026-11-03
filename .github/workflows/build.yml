@@ -1,0 +1,63 @@
+name: Build LiteDesk (Windows & macOS native packages)
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: LiteDesk-Windows
+          - os: macos-latest
+            artifact: LiteDesk-macOS-arm64
+          - os: macos-15-intel
+            artifact: LiteDesk-macOS-intel
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt pyinstaller
+      - name: Build native binaries
+        run: python build.py
+      - name: Smoke test host binary (mock desktop, headless-safe)
+        shell: python
+        run: |
+          import subprocess, sys, time, os
+          exe = os.path.join("dist", "LiteDesk-Host.exe" if sys.platform == "win32" else "LiteDesk-Host")
+          p = subprocess.Popen([exe, "--mock", "--port", "19021", "--password", "ci-test"])
+          try:
+              sys.path.insert(0, ".")
+              from litedesk.client import RemoteClient
+              cli = None
+              for _ in range(40):
+                  try: cli = RemoteClient("127.0.0.1", 19021, "ci-test"); break
+                  except OSError: time.sleep(0.5)
+              assert cli and cli.wait_frames(3), "host binary produced no frames"
+              print("smoke test OK, frames:", cli.frame_count)
+          finally:
+              p.terminate()
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}.zip
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: cd dist && zip -r ../${{ matrix.artifact }}.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.zip
+      - name: Attach to Release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.artifact }}.zip
