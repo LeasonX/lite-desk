@@ -21,8 +21,12 @@ def main():
     d.line([(cx - 40, cy), (cx + 40, cy)], fill=(255, 210, 60, 255), width=8)
     d.line([(cx, cy - 40), (cx, cy + 40)], fill=(255, 210, 60, 255), width=8)
     img.save(os.path.join(out, "icon.png"))
-    img.save(os.path.join(out, "icon.ico"), sizes=[(16, 16), (32, 32), (48, 48), (256, 256)])
-    img.save(os.path.join(out, "icon.icns"))
+    # 单个格式失败不能拖垮整个打包 (如某平台 Pillow 写 icns/ico 受限), 逐个容错
+    for fmt, kw in [("icon.ico", {"sizes": [(16, 16), (32, 32), (48, 48), (256, 256)]}), ("icon.icns", {})]:
+        try:
+            img.save(os.path.join(out, fmt), **kw)
+        except Exception as e:
+            print(f"warning: {fmt} 生成失败 ({e}), 打包时将跳过该图标")
     print("icons generated in", out)
 
 if __name__ == "__main__":
